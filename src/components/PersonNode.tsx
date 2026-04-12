@@ -6,7 +6,7 @@ import { User, UserRound, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const PersonNode = ({ data, selected }: NodeProps<Person>) => {
-  const { firstName, lastName, birthDate, deathDate, gender } = data;
+  const { firstName, lastName, maidenName, birthDate, deathDate, gender, notes } = data;
   const { t } = useTranslation();
 
   const getYear = (dateStr?: string) => {
@@ -49,9 +49,29 @@ const PersonNode = ({ data, selected }: NodeProps<Person>) => {
           <div className="text-sm font-bold text-slate-800 truncate leading-tight">
             {firstName || lastName ? `${firstName || ''} ${lastName || ''}` : t('unknown')}
           </div>
+          {maidenName ? (
+            <div className="text-[11px] text-slate-500 mt-0.5 truncate">{`${t('maidenPrefix')} ${maidenName}`}</div>
+          ) : null}
           <div className="text-[10px] font-bold text-slate-400 mt-0.5 tracking-tight uppercase">
             {lifeSpan}
           </div>
+          {notes ? (
+            (() => {
+              const wordsPerLine = 6;
+              const words = notes.split(/\s+/).filter(Boolean);
+              const lines: string[] = [];
+              for (let i = 0; i < words.length; i += wordsPerLine) {
+                lines.push(words.slice(i, i + wordsPerLine).join(' '));
+              }
+              return (
+                <div className="mt-1 text-[11px] text-slate-400">
+                  {lines.map((line, idx) => (
+                    <div key={idx} className="break-words">{line}</div>
+                  ))}
+                </div>
+              );
+            })()
+          ) : null}
         </div>
       </div>
 

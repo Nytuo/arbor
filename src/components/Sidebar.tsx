@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { format } from 'date-fns';
+import { fr as frLocale } from 'date-fns/locale';
 import { useTreeStore } from '../store/useTreeStore';
 import type { Person, RelationshipType } from '../types';
 import { X, Trash2, Plus, Heart, Link, UserPlus } from 'lucide-react';
@@ -16,7 +20,23 @@ const Sidebar: React.FC = () => {
     addRelationship,
     deleteRelationship
   } = useTreeStore();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isFr = i18n.language?.startsWith('fr');
+  const placeholder = isFr ? 'JJ/MM/AAAA' : String(t('placeholderDate'));
+
+  const formatForDateInput = (dateStr?: string) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      const yyyy = d.getFullYear().toString().padStart(4, '0');
+      const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+      const dd = d.getDate().toString().padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    } catch {
+      return '';
+    }
+  };
 
   const person = people.find(p => p.id === selectedPersonId);
   const [formData, setFormData] = useState<Partial<Person>>({});
@@ -119,6 +139,16 @@ const Sidebar: React.FC = () => {
               />
             </div>
             <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('maidenName')}</label>
+              <input
+                type="text"
+                name="maidenName"
+                value={formData.maidenName || ''}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+              />
+            </div>
+            <div>
               <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('gender')}</label>
               <select
                 name="gender"
@@ -135,23 +165,37 @@ const Sidebar: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('birthDate')}</label>
-                <input
-                  type="text"
-                  name="birthDate"
-                  placeholder={t('placeholderDate')}
-                  value={formData.birthDate || ''}
-                  onChange={handleChange}
+                <DatePicker
+                  selected={formData.birthDate ? new Date(formData.birthDate) : null}
+                  onChange={(date: Date | null) => {
+                    const value = date ? format(date, 'yyyy-MM-dd') : '';
+                    setFormData(prev => ({ ...prev, birthDate: value }));
+                    updatePerson(person.id, { birthDate: value });
+                  }}
+                  dateFormat={isFr ? 'dd/MM/yyyy' : 'yyyy-MM-dd'}
+                  locale={isFr ? frLocale : undefined}
+                  placeholderText={placeholder}
+                  showMonthDropdown
+                  showYearDropdown
+                  dropdownMode="select"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1.5">{t('deathDate')}</label>
-                <input
-                  type="text"
-                  name="deathDate"
-                  placeholder={t('placeholderDate')}
-                  value={formData.deathDate || ''}
-                  onChange={handleChange}
+                <DatePicker
+                  selected={formData.deathDate ? new Date(formData.deathDate) : null}
+                  onChange={(date: Date | null) => {
+                    const value = date ? format(date, 'yyyy-MM-dd') : '';
+                    setFormData(prev => ({ ...prev, deathDate: value }));
+                    updatePerson(person.id, { deathDate: value });
+                  }}
+                  dateFormat={isFr ? 'dd/MM/yyyy' : 'yyyy-MM-dd'}
+                  locale={isFr ? frLocale : undefined}
+                  placeholderText={placeholder}
+                  showMonthDropdown
+                  showYearDropdown
+                  dropdownMode="select"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
                 />
               </div>
