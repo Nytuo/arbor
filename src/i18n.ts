@@ -1,0 +1,95 @@
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import LanguageDetector from 'i18next-browser-languagedetector';
+
+const resources = {
+  en: {
+    translation: {
+      "appName": "Arbor",
+      "tagline": "Your Family Tree, Simplified.",
+      "welcome": "Welcome to Arbor",
+      "welcomeDesc": "Start building your family tree by adding your first person or importing an existing file.",
+      "tip": "Tip: Click on a person to edit their details and add relationships like spouses or children.",
+      "addFirstPerson": "Add First Person",
+      "details": "Details",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "gender": "Gender",
+      "male": "Male",
+      "female": "Female",
+      "other": "Other",
+      "unknown": "Unknown",
+      "birthDate": "Birth Date",
+      "deathDate": "Death Date",
+      "notes": "Notes",
+      "relationships": "Relationships",
+      "addRelative": "Add Relative",
+      "child": "Child",
+      "spouse": "Spouse",
+      "searchPeople": "Search people...",
+      "noResults": "No results found",
+      "createNewPerson": "+ Create new person",
+      "parent": "Parent",
+      "deletePerson": "Delete Person",
+      "deleteConfirm": "Are you sure you want to delete this person and all their relationships?",
+      "clearAll": "Clear all data",
+      "clearConfirm": "Are you sure you want to clear the entire tree? This cannot be undone.",
+      "import": "Import",
+      "exportJSON": "Export JSON",
+      "exportGedcom": "Export GEDCOM",
+      "selectPersonDesc": "Select a person to edit their details or add relatives.",
+      "placeholderDate": "YYYY-MM-DD",
+    }
+  },
+  fr: {
+    translation: {
+      "appName": "Arbor",
+      "tagline": "Votre arbre généalogique, simplifié.",
+      "welcome": "Bienvenue sur Arbor",
+      "welcomeDesc": "Commencez à construire votre arbre en ajoutant votre première personne ou en important un fichier existant.",
+      "tip": "Conseil : Cliquez sur une personne pour modifier ses détails et ajouter des relations comme des conjoints ou des enfants.",
+      "addFirstPerson": "Ajouter la première personne",
+      "details": "Détails",
+      "firstName": "Prénom",
+      "lastName": "Nom",
+      "gender": "Genre",
+      "male": "Homme",
+      "female": "Femme",
+      "other": "Autre",
+      "unknown": "Inconnu",
+      "birthDate": "Date de naissance",
+      "deathDate": "Date de décès",
+      "notes": "Notes",
+      "relationships": "Relations",
+      "addRelative": "Ajouter un parent",
+      "child": "Enfant",
+      "spouse": "Conjoint",
+      "searchPeople": "Rechercher...",
+      "noResults": "Aucun résultat",
+      "createNewPerson": "+ Créer une personne",
+      "parent": "Parent",
+      "deletePerson": "Supprimer la personne",
+      "deleteConfirm": "Êtes-vous sûr de vouloir supprimer cette personne et toutes ses relations ?",
+      "clearAll": "Tout effacer",
+      "clearConfirm": "Êtes-vous sûr de vouloir effacer tout l'arbre ? Cette action est irréversible.",
+      "import": "Importer",
+      "exportJSON": "Exporter JSON",
+      "exportGedcom": "Exporter GEDCOM",
+      "selectPersonDesc": "Sélectionnez une personne pour modifier ses détails ou ajouter des membres.",
+      "placeholderDate": "AAAA-MM-JJ",
+    }
+  }
+};
+
+i18n
+  .use(LanguageDetector)
+  .use(initReactI18next)
+  .init({
+    resources,
+    fallbackLng: 'en',
+    interpolation: {
+      escapeValue: false,
+    }
+  });
+
+export default i18n;
