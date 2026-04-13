@@ -23,6 +23,11 @@ const Sidebar: React.FC = () => {
   const { t, i18n } = useTranslation();
   const isFr = i18n.language?.startsWith('fr');
   const placeholder = isFr ? 'JJ/MM/AAAA' : String(t('placeholderDate'));
+  const currentYear = new Date().getFullYear();
+  const minYear = 1600;
+  const minDateObj = new Date(minYear, 0, 1);
+  const maxDateObj = new Date();
+  const yearDropdownCount = currentYear - minYear + 1;
 
   const formatForDateInput = (dateStr?: string) => {
     if (!dateStr) return '';
@@ -56,7 +61,7 @@ const Sidebar: React.FC = () => {
       <div className="w-80 h-full border-l bg-white p-6 overflow-y-auto">
         <h2 className="text-xl font-bold mb-4 text-slate-800">{t('appName')}</h2>
         <p className="text-slate-500 text-sm mb-6 leading-relaxed">{t('selectPersonDesc')}</p>
-        <button
+          <button
           onClick={() => {
             const id = addPerson({ firstName: '', lastName: '' });
             setSelectedPersonId(id);
@@ -64,7 +69,7 @@ const Sidebar: React.FC = () => {
           className="w-full flex items-center justify-center gap-2 bg-emerald-600 text-white py-2.5 px-4 rounded-xl hover:bg-emerald-700 transition-all shadow-sm font-bold"
         >
           <UserPlus size={18} />
-          {t('addFirstPerson')}
+          {t('addPerson')}
         </button>
       </div>
     );
@@ -178,6 +183,9 @@ const Sidebar: React.FC = () => {
                   showMonthDropdown
                   showYearDropdown
                   dropdownMode="select"
+                  minDate={minDateObj}
+                  maxDate={maxDateObj}
+                  yearDropdownItemNumber={yearDropdownCount}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
                 />
               </div>
@@ -196,6 +204,9 @@ const Sidebar: React.FC = () => {
                   showMonthDropdown
                   showYearDropdown
                   dropdownMode="select"
+                  minDate={minDateObj}
+                  maxDate={maxDateObj}
+                  yearDropdownItemNumber={yearDropdownCount}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
                 />
               </div>
