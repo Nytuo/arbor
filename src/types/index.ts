@@ -1,4 +1,4 @@
-export type Gender = 'M' | 'F' | 'O' | 'U';
+export type Gender = "M" | "F" | "O" | "U";
 
 export interface Person {
   id: string;
@@ -14,17 +14,17 @@ export interface Person {
   position?: { x: number; y: number };
 }
 
-export type RelationshipType = 'PARENT_CHILD' | 'SPOUSE';
+export type RelationshipType = "PARENT_CHILD" | "SPOUSE";
 
 export interface Relationship {
   id: string;
   type: RelationshipType;
-  fromId: string; // The parent or the first spouse
-  toId: string;   // The child or the second spouse
+  fromId: string;
+  toId: string;
   metadata?: {
-    status?: 'married' | 'divorced' | 'partnered';
+    status?: "married" | "divorced" | "partnered";
     date?: string;
-    relationshipType?: 'biological' | 'adopted' | 'step';
+    relationshipType?: "biological" | "adopted" | "step";
   };
 }
 

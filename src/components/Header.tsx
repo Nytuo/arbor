@@ -1,9 +1,16 @@
-import React, { useRef } from 'react';
-import { useTreeStore } from '../store/useTreeStore';
-import { Download, Upload, Trash2, FileJson, TreePine, Globe } from 'lucide-react';
-import { exportToJSON, importFromJSON } from '../utils/jsonHandler';
-import { exportToGedcom, importFromGedcom } from '../utils/gedcomHandler';
-import { useTranslation } from 'react-i18next';
+import React, { useRef } from "react";
+import { useTreeStore } from "../store/useTreeStore";
+import {
+  Download,
+  Upload,
+  Trash2,
+  FileJson,
+  TreePine,
+  Globe,
+} from "lucide-react";
+import { exportToJSON, importFromJSON } from "../utils/jsonHandler";
+import { exportToGedcom, importFromGedcom } from "../utils/gedcomHandler";
+import { useTranslation } from "react-i18next";
 
 const Header: React.FC = () => {
   const { people, relationships, importData, resetTree } = useTreeStore();
@@ -25,34 +32,36 @@ const Header: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (event) => {
       const content = event.target?.result as string;
-      
-      if (file.name.endsWith('.json')) {
+
+      if (file.name.endsWith(".json")) {
         const data = importFromJSON(content);
         if (data) importData(data);
-      } else if (file.name.endsWith('.ged') || file.name.endsWith('.gedcom')) {
+      } else if (file.name.endsWith(".ged") || file.name.endsWith(".gedcom")) {
         const data = importFromGedcom(content);
         if (data) importData(data);
       }
-      
-      if (fileInputRef.current) fileInputRef.current.value = '';
+
+      if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
     reader.readAsText(file);
   };
 
   const toggleLanguage = () => {
-    i18n.changeLanguage(i18n.language === 'fr' ? 'en' : 'fr');
+    i18n.changeLanguage(i18n.language === "fr" ? "en" : "fr");
   };
 
   return (
     <header className="h-16 border-b bg-white px-6 flex items-center justify-between shadow-sm z-20">
       <div className="flex items-center gap-2">
-        <div className="bg-emerald-600 p-1.5 rounded-lg shadow-inner">
-          <TreePine className="text-white" size={20} />
-        </div>
+        <img src="favicon.png" alt="Logo" className="w-6 h-6" />
         <div>
-          <h1 className="text-xl font-bold text-slate-800 leading-none">{t('appName')}</h1>
-          <p className="text-[10px] text-slate-400 font-medium tracking-tight uppercase">{t('tagline')}</p>
+          <h1 className="text-xl font-bold text-slate-800 leading-none">
+            {t("appName")}
+          </h1>
+          <p className="text-[10px] text-slate-400 font-medium tracking-tight uppercase">
+            {t("tagline")}
+          </p>
         </div>
       </div>
 
@@ -70,16 +79,16 @@ const Header: React.FC = () => {
         <button
           onClick={handleExportJSON}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-          title={t('exportJSON')}
+          title={t("exportJSON")}
         >
           <FileJson size={18} />
           <span className="hidden lg:inline">JSON</span>
         </button>
-        
+
         <button
           onClick={handleExportGedcom}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-          title={t('exportGedcom')}
+          title={t("exportGedcom")}
         >
           <Download size={18} />
           <span className="hidden lg:inline">GEDCOM</span>
@@ -90,7 +99,7 @@ const Header: React.FC = () => {
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors bg-emerald-50/30 border border-emerald-100"
         >
           <Upload size={18} />
-          <span className="hidden sm:inline">{t('import')}</span>
+          <span className="hidden sm:inline">{t("import")}</span>
         </button>
         <input
           type="file"
@@ -104,12 +113,12 @@ const Header: React.FC = () => {
 
         <button
           onClick={() => {
-            if (window.confirm(t('clearConfirm'))) {
+            if (window.confirm(t("clearConfirm"))) {
               resetTree();
             }
           }}
           className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
-          title={t('clearAll')}
+          title={t("clearAll")}
         >
           <Trash2 size={18} />
         </button>

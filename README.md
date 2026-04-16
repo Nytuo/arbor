@@ -1,73 +1,115 @@
-# React + TypeScript + Vite
+# Geneologue
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+<div align="center">
+	<h3>Geneologue</h3>
+	<p>A small, local-first family tree editor with GEDCOM & JSON import/export.</p>
+</div>
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Table of Contents
 
-## React Compiler
+- [Geneologue](#geneologue)
+  - [Table of Contents](#table-of-contents)
+  - [About](#about)
+  - [Project Structure](#project-structure)
+  - [Built With](#built-with)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+  - [Usage](#usage)
+  - [Data \& Scripts](#data--scripts)
+  - [Development](#development)
+  - [Contributing](#contributing)
+  - [Authors \& Contributors](#authors--contributors)
+  - [License](#license)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## About
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+`Geneologue` is a lightweight family tree editor built with Vite, React and TypeScript. It supports importing GEDCOM and JSON files, visualizing a simple tree, editing person nodes, and exporting the tree back to GEDCOM or JSON.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Project Structure
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- `src/` — React application source: components, store, types, and utilities.
+- `data/` — sample GEDCOM files (e.g. [data/complex_2000.ged](data/complex_2000.ged)).
+- `public/` — static assets (favicon, images).
+- `scripts/` — small helper scripts (GEDCOM generation: `generate_gedcom.js`, `generate_gedcom.cjs`).
+- `package.json`, `vite.config.ts`, `tsconfig.*.json` — project configuration.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Built With
+
+- Vite
+- React
+- TypeScript
+- TailwindCSS (utility styles)
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ and npm or yarn
+
+### Installation
+
+Install dependencies:
+
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Start the development server:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+Build for production:
+
+```bash
+npm run build
+```
+
+Preview the production build:
+
+```bash
+npm run preview
+```
+
+## Usage
+
+- Use the header (top-right controls) to import or export data.
+- Supported import file types: `.json`, `.ged`, `.gedcom`.
+- Export options: JSON or GEDCOM from the current tree.
+- Example sample GEDCOM: [data/complex_2000.ged](data/complex_2000.ged).
+
+## Data & Scripts
+
+- Sample GEDCOM files live in [data/](data/).
+- Use the scripts in `scripts/` to generate sample GEDCOM files:
+
+```bash
+node scripts/generate_gedcom.js
+# or
+node scripts/generate_gedcom.cjs
+```
+
+## Development
+
+- The app uses `useTreeStore` (Zustand) for state and `utils/gedcomHandler.ts` / `utils/jsonHandler.ts` for import/export.
+- Internationalization is handled via `react-i18next` — toggle language from the header.
+
+## Contributing
+
+Contributions are welcome. Please open issues for bugs or feature requests and submit small, focused pull requests. When adding features, update this README as needed and include sample data if appropriate.
+
+## Authors & Contributors
+
+Original author: Arnaud BEUX
+
+For a full list of contributors see the repository contributor list.
+
+## License
+
+MIT
