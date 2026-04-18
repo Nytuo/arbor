@@ -56,7 +56,7 @@ const PersonNode = ({ data, selected }: NodeProps<Person>) => {
     <div
       className={`px-4 py-3 shadow-lg rounded-2xl border-2 bg-white min-w-[180px] transition-all duration-300 ${selected ? "border-emerald-500 ring-4 ring-emerald-500/10 scale-105 z-50" : "border-transparent hover:border-slate-200"}`}
     >
-      {/* Top handles for Parents */}
+      
       <Handle
         type="target"
         position={Position.Top}
@@ -108,7 +108,7 @@ const PersonNode = ({ data, selected }: NodeProps<Person>) => {
         </div>
       </div>
 
-      {/* Bottom handles for Children */}
+      
       <Handle
         type="source"
         position={Position.Bottom}
@@ -116,7 +116,7 @@ const PersonNode = ({ data, selected }: NodeProps<Person>) => {
         className="!w-3 !h-3 !bg-slate-300 border-2 border-white"
       />
 
-      {/* Side handles for Spouses */}
+      
       <Handle
         type="source"
         position={Position.Right}

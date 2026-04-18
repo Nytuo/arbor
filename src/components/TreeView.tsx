@@ -686,7 +686,7 @@ const TreeView: React.FC = () => {
         </div>
       </div>
 
-      {/* diagram-space generation grid: renders inside ReactFlow viewport so it pans/zooms with nodes */}
+      
 
       <ReactFlow
         nodes={nodes}
@@ -717,7 +717,7 @@ const TreeView: React.FC = () => {
           const { scale, tx, ty } = getViewportTransform();
           const minY = b.minY;
           const maxY = b.maxY;
-          const lines: JSX.Element[] = [];
+          const lines: React.ReactElement[] = [];
           for (
             let y = Math.floor(minY / GEN_ROW_HEIGHT) * GEN_ROW_HEIGHT;
             y <= maxY;
