@@ -1,7 +1,11 @@
-# Geneologue
 
+<h1 align="center">
+  <a href="https://github.com/Nytuo/confero">
+    <img src="public/favicon.png" alt="Logo" width="auto" height="100">
+  </a>
+</h1>
 <div align="center">
-	<h3>Geneologue</h3>
+	<h2>Arbor</h2>
 	<p>A small, local-first family tree editor with GEDCOM & JSON import/export.</p>
 </div>
 
@@ -9,7 +13,7 @@
 
 ## Table of Contents
 
-- [Geneologue](#geneologue)
+- [Arbor](#Arbor)
   - [Table of Contents](#table-of-contents)
   - [About](#about)
   - [Project Structure](#project-structure)
@@ -28,7 +32,7 @@
 
 ## About
 
-`Geneologue` is a lightweight family tree editor built with Vite, React and TypeScript. It supports importing GEDCOM and JSON files, visualizing a simple tree, editing person nodes, and exporting the tree back to GEDCOM or JSON.
+`Arbor` is a lightweight family tree editor built with Vite, React and TypeScript. It supports importing GEDCOM and JSON files, visualizing a simple tree, editing person nodes, and exporting the tree back to GEDCOM or JSON.
 
 ## Project Structure
 
