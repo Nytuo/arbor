@@ -104,6 +104,23 @@ node scripts/generate_gedcom.cjs
 - The app uses `useTreeStore` (Zustand) for state and `utils/gedcomHandler.ts` / `utils/jsonHandler.ts` for import/export.
 - Internationalization is handled via `react-i18next` — toggle language from the header.
 
+## Offline access
+
+Arbor is a local-first, client-only app (data lives in the browser via `localforage`), so it works two ways when the hosted site is unreachable:
+
+- **PWA** — the web build (`npm run build`) registers a service worker that precaches the app shell, so once visited it keeps working offline and is installable from the browser's "Install app" prompt. When a new version is deployed, a toast offers to reload into it — nothing switches over without confirming.
+- **Desktop app (Tauri)** — a native, lightweight executable (a few MB, no bundled browser) for macOS/Windows/Linux:
+
+  ```bash
+  npm run tauri:dev    # run the desktop shell locally
+  npm run tauri:build  # build a release binary for the current OS
+  ```
+
+  The desktop build checks GitHub Releases for updates shortly after launch and shows a modal with the changelog; nothing downloads or installs until the user clicks "Update Now".
+
+  Releases are published automatically by `.github/workflows/release-desktop.yml` on every push to `main`, versioned from [Conventional Commits](https://www.conventionalcommits.org/) since the last `arbor-v*` tag (`fix:` → patch, `feat:` → minor, `!:`/`BREAKING CHANGE:` → major; no matching commits → no release). It bumps `src-tauri/tauri.conf.json`/`Cargo.toml`, tags, builds for macOS/Windows/Linux, and opens a **draft** GitHub release — review and publish it manually. A specific version can also be forced via "Run workflow" in the Actions tab. It needs two repo secrets:
+  - `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — generate with `npx tauri signer generate -w /path/outside/repo/arbor.key`; the private key must **never** be committed. The matching public key is already in `src-tauri/tauri.conf.json`.
+
 ## Contributing
 
 Contributions are welcome. Please open issues for bugs or feature requests and submit small, focused pull requests. When adding features, update this README as needed and include sample data if appropriate.

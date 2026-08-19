@@ -1,24 +1,100 @@
-import React, { useRef } from "react";
-import { useTreeStore } from "../store/useTreeStore";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { useTreeStore } from "@/store/useTreeStore";
 import {
   Download,
   Upload,
   Trash2,
   FileJson,
-  TreePine,
   Globe,
+  Undo2,
+  Redo2,
+  UserPlus,
+  FolderPlus,
+  LayoutGrid,
+  FileOutput,
+  Grid3x3,
 } from "lucide-react";
-import { exportToJSON, importFromJSON } from "../utils/jsonHandler";
-import { exportToGedcom, importFromGedcom } from "../utils/gedcomHandler";
+import { exportToJSON, importFromJSON } from "@/utils/jsonHandler";
+import { exportToGedcom, importFromGedcom } from "@/utils/gedcomHandler";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import ExportDialog from "@/components/ExportDialog";
+import { useUndoRedo } from "@/hooks/useUndoRedo";
+import { addPersonAtViewportCenter, addGroupAtViewportCenter, autoArrangeTree } from "@/components/canvas/rete/actions";
+import {
+  buildLogicalEdges,
+  buildTreePdf,
+  buildTreeSvg,
+  layoutExportNodes,
+  type ExportOptions,
+} from "@/utils/treeExport";
+import { cn } from "@/lib/utils";
 
-const Header: React.FC = () => {
-  const { people, relationships, importData, resetTree } = useTreeStore();
+interface HeaderProps {
+  genGrid: boolean;
+  onToggleGenGrid: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ genGrid, onToggleGenGrid }) => {
+  const { people, relationships, groups, importData, resetTree } = useTreeStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t, i18n } = useTranslation();
+  const { undo, redo, canUndo, canRedo } = useUndoRedo();
+  const [isExporting, setIsExporting] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const exportTitle = useMemo(() => t("appName") + " — " + t("tagline"), [t]);
+  const hasPeople = people.length > 0;
+
+  const performExport = useCallback(
+    async (format: "pdf" | "svg", opts: ExportOptions) => {
+      setDialogOpen(false);
+      setIsExporting(true);
+      try {
+        const logicalEdges = buildLogicalEdges(people, relationships);
+        const exportNodes = layoutExportNodes(people, relationships, t);
+        if (format === "pdf") {
+          const pdf = buildTreePdf(exportNodes, logicalEdges, opts);
+          pdf.save("family-tree.pdf");
+        } else {
+          const svg = buildTreeSvg(exportNodes, logicalEdges, t, {
+            title: opts.includeTitle ? opts.title : undefined,
+            subtitle: opts.includeTitle ? opts.subtitle : undefined,
+          });
+          const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "family-tree.svg";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error(t("exportFailed"));
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [people, relationships, t],
+  );
 
   const handleExportJSON = () => {
-    exportToJSON({ people, relationships });
+    exportToJSON({ people, relationships, groups });
   };
 
   const handleExportGedcom = () => {
@@ -32,13 +108,15 @@ const Header: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (event) => {
       const content = event.target?.result as string;
+      const isJson = file.name.endsWith(".json");
+      const isGedcom = file.name.endsWith(".ged") || file.name.endsWith(".gedcom");
 
-      if (file.name.endsWith(".json")) {
-        const data = importFromJSON(content);
-        if (data) importData(data);
-      } else if (file.name.endsWith(".ged") || file.name.endsWith(".gedcom")) {
-        const data = importFromGedcom(content);
-        if (data) importData(data);
+      const data = isJson ? importFromJSON(content) : isGedcom ? importFromGedcom(content) : null;
+      if (data) {
+        importData(data);
+        toast.success(t("importSuccess"));
+      } else if (isJson || isGedcom) {
+        toast.error(t("importFailed"));
       }
 
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -52,77 +130,109 @@ const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-16 border-b bg-white px-6 flex items-center justify-between shadow-sm z-20">
-      <div className="flex items-center gap-2">
-        <img src="favicon.png" alt="Logo" className="w-6 h-6" />
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 leading-none">
-            {t("appName")}
-          </h1>
-          <p className="text-[10px] text-slate-400 font-medium tracking-tight uppercase">
-            {t("tagline")}
-          </p>
-        </div>
-      </div>
+    <header className="h-16 border-b bg-card px-6 flex items-center justify-between shadow-sm z-20">
 
-      <div className="flex items-center gap-2">
-        <button
-          onClick={toggleLanguage}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-md transition-all border border-transparent hover:border-slate-200"
+      <div className="flex items-center gap-1 overflow-x-auto">
+        <Button variant="ghost" size="icon" onClick={() => undo()} disabled={!canUndo} aria-label={t("undo")} title={t("undo")}>
+          <Undo2 size={18} />
+        </Button>
+        <Button variant="ghost" size="icon" onClick={() => redo()} disabled={!canRedo} aria-label={t("redo")} title={t("redo")}>
+          <Redo2 size={18} />
+        </Button>
+
+        <div className="h-6 w-px bg-border mx-1 shrink-0" />
+
+        <Button variant="ghost" onClick={() => addPersonAtViewportCenter()} title="Quick add person (N)">
+          <UserPlus size={16} />
+          <span className="hidden xl:inline">{t("addPerson")}</span>
+        </Button>
+        <Button variant="ghost" onClick={() => addGroupAtViewportCenter(t)} disabled={!hasPeople} title={t("addGroupHint")}>
+          <FolderPlus size={16} />
+          <span className="hidden xl:inline">{t("addGroup")}</span>
+        </Button>
+        <Button variant="ghost" onClick={() => autoArrangeTree(t)} disabled={!hasPeople} title={t("autoArrange")}>
+          <LayoutGrid size={16} />
+          <span className="hidden xl:inline">{t("autoArrange")}</span>
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={onToggleGenGrid}
+          className={cn(genGrid && "bg-indigo-50 text-indigo-600")}
+          title={genGrid ? t("genGridOn") : t("genGridOff")}
+          aria-pressed={genGrid}
         >
+          <Grid3x3 size={16} />
+          <span className="hidden xl:inline">{genGrid ? t("genGridOn") : t("genGridOff")}</span>
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => setDialogOpen(true)}
+          disabled={isExporting || !hasPeople}
+          className="font-bold text-foreground"
+          title={t("exportTree")}
+        >
+          <FileOutput size={16} />
+          <span className="hidden xl:inline">{isExporting ? t("exporting") : t("exportTree")}</span>
+        </Button>
+
+        <div className="h-6 w-px bg-border mx-1 shrink-0" />
+
+        <Button variant="ghost" onClick={toggleLanguage} className="text-xs font-bold text-muted-foreground">
           <Globe size={14} />
           {i18n.language.toUpperCase().substring(0, 2)}
-        </button>
+        </Button>
 
-        <div className="h-6 w-px bg-slate-200 mx-1" />
+        <div className="h-6 w-px bg-border mx-1 shrink-0" />
 
-        <button
-          onClick={handleExportJSON}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-          title={t("exportJSON")}
-        >
+        <Button variant="ghost" onClick={handleExportJSON} title={t("exportJSON")}>
           <FileJson size={18} />
           <span className="hidden lg:inline">JSON</span>
-        </button>
+        </Button>
 
-        <button
-          onClick={handleExportGedcom}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-          title={t("exportGedcom")}
-        >
+        <Button variant="ghost" onClick={handleExportGedcom} title={t("exportGedcom")}>
           <Download size={18} />
           <span className="hidden lg:inline">GEDCOM</span>
-        </button>
+        </Button>
 
-        <button
+        <Button
+          variant="ghost"
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-bold text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors bg-emerald-50/30 border border-emerald-100"
+          className="font-bold text-primary hover:text-primary bg-primary/5 border border-primary/10 hover:bg-primary/10"
         >
           <Upload size={18} />
           <span className="hidden sm:inline">{t("import")}</span>
-        </button>
+        </Button>
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleImport}
           accept=".json,.ged,.gedcom"
           className="hidden"
+          aria-label={t("import")}
         />
 
-        <div className="h-6 w-px bg-slate-200 mx-1" />
+        <div className="h-6 w-px bg-border mx-1 shrink-0" />
 
-        <button
-          onClick={() => {
-            if (window.confirm(t("clearConfirm"))) {
-              resetTree();
-            }
-          }}
-          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
-          title={t("clearAll")}
-        >
-          <Trash2 size={18} />
-        </button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" title={t("clearAll")} aria-label={t("clearAll")}>
+              <Trash2 size={18} />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("clearAll")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("clearConfirm")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={resetTree}>{t("clearAll")}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
+
+      <ExportDialog open={dialogOpen} onClose={() => setDialogOpen(false)} onExport={performExport} defaultTitle={exportTitle} />
     </header>
   );
 };

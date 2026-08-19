@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Tauri desktop build
+src-tauri/target
+src-tauri/gen
+*.key
+*.key.pub
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -24,3 +30,11 @@ dist-ssr
 *.sw?
 
 *.ged
+
+# Regenerable test fixtures (scripts/generate_test_fixtures.cjs, generate_gedcom.cjs)
+/data/
+
+# Playwright
+/playwright-report/
+/test-results/
+/blob-report/
