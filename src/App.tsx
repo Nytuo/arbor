@@ -1,16 +1,22 @@
+import { useState } from "react";
 import Header from "./components/Header";
-import TreeView from "./components/TreeView";
+import TreeCanvas from "./components/canvas/TreeCanvas";
 import Sidebar from "./components/Sidebar";
+import CommandPalette from "./components/CommandPalette";
+import { Toaster } from "./components/ui/sonner";
+import UpdaterModal from "./components/common/UpdaterModal";
+import PwaUpdatePrompt from "./components/common/PwaUpdatePrompt";
 import { useTreeStore } from "./store/useTreeStore";
 import { useTranslation } from "react-i18next";
 
 function App() {
   const { people } = useTreeStore();
   const { t } = useTranslation();
+  const [genGrid, setGenGrid] = useState(false);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-50 text-slate-900">
-      <Header />
+      <Header genGrid={genGrid} onToggleGenGrid={() => setGenGrid((g) => !g)} />
 
       <main className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 relative">
@@ -31,12 +37,16 @@ function App() {
               </div>
             </div>
           ) : (
-            <TreeView />
+            <TreeCanvas genGrid={genGrid} />
           )}
         </div>
 
         <Sidebar />
       </main>
+      <CommandPalette />
+      <Toaster position="bottom-right" />
+      <UpdaterModal />
+      <PwaUpdatePrompt />
     </div>
   );
 }

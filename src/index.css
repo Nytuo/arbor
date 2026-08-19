@@ -1,29 +1,96 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
+  --radius: 0.75rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.21 0.03 258);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.03 258);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.03 258);
+
+  --primary: oklch(0.6 0.14 163);
+  --primary-foreground: oklch(0.98 0.01 163);
+
+  --secondary: oklch(0.96 0.01 258);
+  --secondary-foreground: oklch(0.28 0.03 258);
+
+  --muted: oklch(0.96 0.01 258);
+  --muted-foreground: oklch(0.55 0.02 258);
+
+  --accent: oklch(0.96 0.01 258);
+  --accent-foreground: oklch(0.28 0.03 258);
+
+  --destructive: oklch(0.58 0.22 27);
+  --destructive-foreground: oklch(0.98 0.01 27);
+
+  --border: oklch(0.9 0.01 258);
+  --input: oklch(0.9 0.01 258);
+  --ring: oklch(0.6 0.14 163);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
 #root {
   width: 100%;
   height: 100vh;
+}
+
+.input-socket,
+.output-socket {
+  display: block;
+  width: 100%;
+  height: 100%;
 }

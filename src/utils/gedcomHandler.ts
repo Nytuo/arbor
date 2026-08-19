@@ -114,7 +114,6 @@ export const importFromGedcom = (content: string): FamilyTreeData | null => {
     return { people, relationships };
   } catch (error) {
     console.error("Error importing GEDCOM:", error);
-    alert("Failed to import GEDCOM file.");
     return null;
   }
 };

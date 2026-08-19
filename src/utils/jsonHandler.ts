@@ -24,7 +24,6 @@ export const importFromJSON = (content: string): FamilyTreeData | null => {
     throw new Error("Invalid JSON structure");
   } catch (error) {
     console.error("Error importing JSON:", error);
-    alert("Failed to import JSON file. Please make sure it is a valid export.");
     return null;
   }
 };

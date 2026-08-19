@@ -1,15 +1,7 @@
 import jsPDF from "jspdf";
 import type { Person, Relationship } from "../types";
-
-export const EXPORT_NODE_W = 200;
-export const EXPORT_NODE_H = 80;
-
-export interface ExportNode {
-  id: string;
-  x: number;
-  y: number;
-  person: Person;
-}
+import { computeFamilyLayout } from "./layout";
+import { dataUrlMimeType } from "./imageUtils";
 
 export type EdgeKind = "spouse" | "parent";
 
@@ -31,7 +23,7 @@ interface RoutedEdge {
   kind: EdgeKind;
   color: string;
   segments: Segment[];
-  arrow?: { x: number; y: number };
+  arrows?: { x: number; y: number }[];
 }
 
 export type Translator = (key: string) => string;
@@ -47,6 +39,8 @@ export interface ExportOptions {
   margin: number;
   includeTitle: boolean;
   includeIndex: boolean;
+  transparentBackground?: boolean;
+  includeTileIndicator?: boolean;
   title: string;
   subtitle?: string;
   t: Translator;
@@ -60,6 +54,7 @@ const CARD_BORDER = "#cbd5e1";
 const TEXT_PRIMARY = "#0f172a";
 const TEXT_SECONDARY = "#475569";
 const TEXT_MUTED = "#94a3b8";
+const FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif";
 
 const genderAccent = (g?: Person["gender"]): string => {
   switch (g) {
@@ -88,10 +83,16 @@ const lifeSpan = (p: Person): string => {
   return `${b || "?"} – ${dth || ""}`.trim().replace(/–\s*$/, "– …").trim();
 };
 
-export const fullName = (p: Person, t: Translator): string => {
-  const n = `${p.firstName || ""} ${p.lastName || ""}`.trim();
-  return n || t("unknown");
+const titleCaseName = (s: string): string =>
+  s.toLocaleLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toLocaleUpperCase());
+
+export const formatPersonName = (p: Pick<Person, "firstName" | "lastName">): string => {
+  const first = (p.firstName || "").trim();
+  const last = (p.lastName || "").trim();
+  return `${first ? titleCaseName(first) : ""} ${last ? last.toLocaleUpperCase() : ""}`.trim();
 };
+
+export const fullName = (p: Person, t: Translator): string => formatPersonName(p) || t("unknown");
 
 const escapeXml = (s: string): string =>
   s.replace(
@@ -106,10 +107,6 @@ const escapeXml = (s: string): string =>
       })[c] || c,
   );
 
-/**
- * O(N + R) computation of logical edges to render.
- * Produces one spouse edge per couple and parent-child edges with shared-child deduplication.
- */
 export const buildLogicalEdges = (
   people: Person[],
   relationships: Relationship[],
@@ -188,21 +185,292 @@ export const buildLogicalEdges = (
   return edges;
 };
 
-const routeEdges = (
-  nodes: ExportNode[],
-  edges: LogicalEdge[],
-): RoutedEdge[] => {
+const CARD_BASE_WIDTH = 240;
+const CARD_PADDING = 16;
+const AVATAR_SIZE = 56;
+const AVATAR_GAP = 12;
+const TEXT_X = CARD_PADDING + AVATAR_SIZE + AVATAR_GAP;
+const NAME_SIZE = 14;
+const SUB_SIZE = 11;
+const NOTE_SIZE = 11;
+const LINE_GAP = 1.25;
+
+interface CardTextLine {
+  x: number;
+  y: number;
+  width: number;
+  text: string;
+  size: number;
+  weight: "bold" | "normal";
+  italic?: boolean;
+  color: string;
+}
+
+export interface CardLayout {
+  width: number;
+  height: number;
+  accent: string;
+  photo?: string;
+  lines: CardTextLine[];
+}
+
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+const getMeasureCtx = (): CanvasRenderingContext2D | null => {
+  if (measureCtx !== undefined) return measureCtx;
+  try {
+    measureCtx = document.createElement("canvas").getContext("2d");
+  } catch {
+    measureCtx = null;
+  }
+  return measureCtx;
+};
+
+const fontString = (size: number, weight: "bold" | "normal", italic?: boolean) =>
+  `${italic ? "italic " : ""}${weight} ${size}px ${FONT_FAMILY}`;
+
+const measureWidth = (text: string, size: number, weight: "bold" | "normal", italic?: boolean): number => {
+  const ctx = getMeasureCtx();
+  if (!ctx) return text.length * size * 0.55;
+  ctx.font = fontString(size, weight, italic);
+  return ctx.measureText(text).width;
+};
+
+const wrapText = (
+  text: string,
+  maxWidth: number,
+  size: number,
+  weight: "bold" | "normal",
+  italic?: boolean,
+): string[] => {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const lines: string[] = [];
+  let current = "";
+
+  const pushHardBroken = (word: string) => {
+    let chunk = "";
+    for (const ch of word) {
+      const candidate = chunk + ch;
+      if (measureWidth(candidate, size, weight, italic) > maxWidth && chunk) {
+        lines.push(chunk);
+        chunk = ch;
+      } else {
+        chunk = candidate;
+      }
+    }
+    return chunk;
+  };
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (measureWidth(candidate, size, weight, italic) <= maxWidth) {
+      current = candidate;
+      continue;
+    }
+    if (current) {
+      lines.push(current);
+      current = "";
+    }
+    if (measureWidth(word, size, weight, italic) > maxWidth) {
+      current = pushHardBroken(word);
+    } else {
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+};
+
+interface WrappedRun {
+  text: string;
+  size: number;
+  weight: "bold" | "normal";
+  italic?: boolean;
+  color: string;
+}
+
+const lineH = (size: number) => size * (1 + LINE_GAP * 0.15) + 2;
+
+export const computeCardLayout = (p: Person, t: Translator): CardLayout => {
+  const accent = genderAccent(p.gender);
+  const name = fullName(p, t);
+  const maiden = p.maidenName ? `${t("maidenPrefix")} ${p.maidenName}` : "";
+  const life = lifeSpan(p);
+  const notesRaw = (p.notes || "").trim();
+
+  let textWidth = CARD_BASE_WIDTH - TEXT_X - CARD_PADDING;
+
+  const build = (width: number): WrappedRun[] => {
+    const runs: WrappedRun[] = [];
+    for (const l of wrapText(name, width, NAME_SIZE, "bold")) {
+      runs.push({ text: l, size: NAME_SIZE, weight: "bold", color: TEXT_PRIMARY });
+    }
+    if (maiden) {
+      for (const l of wrapText(maiden, width, SUB_SIZE, "normal", true)) {
+        runs.push({ text: l, size: SUB_SIZE, weight: "normal", italic: true, color: TEXT_SECONDARY });
+      }
+    }
+    if (life) {
+      for (const l of wrapText(life, width, SUB_SIZE, "bold")) {
+        runs.push({ text: l, size: SUB_SIZE, weight: "bold", color: TEXT_SECONDARY });
+      }
+    }
+    if (notesRaw) {
+      for (const para of notesRaw.split(/\r?\n/)) {
+        for (const l of wrapText(para, width, NOTE_SIZE, "normal")) {
+          runs.push({ text: l, size: NOTE_SIZE, weight: "normal", color: TEXT_MUTED });
+        }
+      }
+    }
+    return runs;
+  };
+
+  let header = build(textWidth);
+  const maxMeasured = header.reduce(
+    (m, run) => Math.max(m, measureWidth(run.text, run.size, run.weight, run.italic)),
+    0,
+  );
+
+  if (maxMeasured > textWidth) {
+    textWidth = Math.ceil(maxMeasured);
+    header = build(textWidth);
+  }
+
+  const cardWidth = TEXT_X + textWidth + CARD_PADDING;
+  const bodyWidth = cardWidth - CARD_PADDING * 2;
+
+  const lines: CardTextLine[] = [];
+  let y = CARD_PADDING + NAME_SIZE;
+  let sawNotes = false;
+  let lastBaseline = y;
+  let lastSize = NAME_SIZE;
+
+  for (const run of header) {
+    const isNote = run.color === TEXT_MUTED && run.size === NOTE_SIZE;
+    if (isNote && !sawNotes) {
+      sawNotes = true;
+      y = Math.max(y, CARD_PADDING + AVATAR_SIZE) + 6;
+    }
+    const x = isNote ? CARD_PADDING : TEXT_X;
+    const width = isNote ? bodyWidth : textWidth;
+    lines.push({ x, y, width, text: run.text, size: run.size, weight: run.weight, italic: run.italic, color: run.color });
+    lastBaseline = y;
+    lastSize = run.size;
+    y += lineH(run.size);
+  }
+
+  const textBottom = lastBaseline + lastSize * 0.3 + CARD_PADDING;
+  const avatarBottom = CARD_PADDING + AVATAR_SIZE + CARD_PADDING;
+  const height = Math.ceil(Math.max(textBottom, avatarBottom));
+
+  return {
+    width: Math.ceil(cardWidth),
+    height,
+    accent,
+    photo: p.photo,
+    lines,
+  };
+};
+
+export interface ExportNode {
+  id: string;
+  x: number;
+  y: number;
+  person: Person;
+  layout: CardLayout;
+}
+
+export const layoutExportNodes = (
+  people: Person[],
+  relationships: Relationship[],
+  t: Translator,
+): ExportNode[] => {
+  const layouts = new Map<string, CardLayout>();
+  for (const p of people) layouts.set(p.id, computeCardLayout(p, t));
+
+  const positions = computeFamilyLayout(
+    people,
+    relationships,
+    (id) => {
+      const l = layouts.get(id);
+      return l ? { width: l.width, height: l.height } : { width: CARD_BASE_WIDTH, height: 80 };
+    },
+    { nodesep: 60, ranksep: 90 },
+  );
+
+  return people.map((p) => {
+    const pos = positions[p.id] ?? { x: 0, y: 0 };
+    return { id: p.id, x: pos.x, y: pos.y, person: p, layout: layouts.get(p.id)! };
+  });
+};
+
+const routeEdges = (nodes: ExportNode[], edges: LogicalEdge[]): RoutedEdge[] => {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const out: RoutedEdge[] = [];
+
+  const parentChildEdges = edges.filter((e) => e.kind === "parent");
+  const childrenByParent = new Map<string, Set<string>>();
+  for (const e of parentChildEdges) {
+    let set = childrenByParent.get(e.sourceId);
+    if (!set) {
+      set = new Set();
+      childrenByParent.set(e.sourceId, set);
+    }
+    set.add(e.targetId);
+  }
+
+  const busedParentChild = new Set<string>();
+
+  for (const e of edges) {
+    if (e.kind !== "spouse") continue;
+    const s = byId.get(e.sourceId);
+    const t = byId.get(e.targetId);
+    if (!s || !t) continue;
+    const c1 = childrenByParent.get(e.sourceId);
+    const c2 = childrenByParent.get(e.targetId);
+    if (!c1 || !c2) continue;
+    const shared = [...c1].filter((id) => c2.has(id));
+    if (shared.length === 0) continue;
+
+    const sx = s.x + s.layout.width;
+    const sy = s.y + s.layout.height / 2;
+    const tx = t.x;
+    const ty = t.y + t.layout.height / 2;
+    const busX = (sx + tx) / 2;
+    const busY = (sy + ty) / 2;
+
+    const childNodes = shared.map((id) => byId.get(id)).filter((n): n is ExportNode => !!n);
+    if (childNodes.length === 0) continue;
+    const childTop = Math.min(...childNodes.map((n) => n.y));
+    const barY = (busY + childTop) / 2;
+    const childXs = childNodes.map((n) => n.x + n.layout.width / 2);
+    const barX1 = Math.min(busX, ...childXs);
+    const barX2 = Math.max(busX, ...childXs);
+
+    const segments: Segment[] = [
+      { x1: busX, y1: busY, x2: busX, y2: barY },
+      { x1: barX1, y1: barY, x2: barX2, y2: barY },
+    ];
+    const arrows: { x: number; y: number }[] = [];
+    for (const child of childNodes) {
+      const cx = child.x + child.layout.width / 2;
+      segments.push({ x1: cx, y1: barY, x2: cx, y2: child.y });
+      arrows.push({ x: cx, y: child.y });
+      busedParentChild.add(`${e.sourceId}|${child.id}`);
+      busedParentChild.add(`${e.targetId}|${child.id}`);
+    }
+    out.push({ kind: "parent", color: PARENT_COLOR, segments, arrows });
+  }
+
   for (const e of edges) {
     const s = byId.get(e.sourceId);
     const t = byId.get(e.targetId);
     if (!s || !t) continue;
     if (e.kind === "spouse") {
-      const sx = s.x + EXPORT_NODE_W;
-      const sy = s.y + EXPORT_NODE_H / 2;
+      const sx = s.x + s.layout.width;
+      const sy = s.y + s.layout.height / 2;
       const tx = t.x;
-      const ty = t.y + EXPORT_NODE_H / 2;
+      const ty = t.y + t.layout.height / 2;
       if (Math.abs(sy - ty) < 2) {
         out.push({
           kind: "spouse",
@@ -222,9 +490,10 @@ const routeEdges = (
         });
       }
     } else {
-      const sx = s.x + EXPORT_NODE_W / 2;
-      const sy = s.y + EXPORT_NODE_H;
-      const tx = t.x + EXPORT_NODE_W / 2;
+      if (busedParentChild.has(`${e.sourceId}|${e.targetId}`)) continue;
+      const sx = s.x + s.layout.width / 2;
+      const sy = s.y + s.layout.height;
+      const tx = t.x + t.layout.width / 2;
       const ty = t.y;
       const midY = (sy + ty) / 2;
       out.push({
@@ -235,7 +504,7 @@ const routeEdges = (
           { x1: sx, y1: midY, x2: tx, y2: midY },
           { x1: tx, y1: midY, x2: tx, y2: ty },
         ],
-        arrow: { x: tx, y: ty },
+        arrows: [{ x: tx, y: ty }],
       });
     }
   }
@@ -258,68 +527,79 @@ const computeBounds = (nodes: ExportNode[]): Bounds => {
   for (const n of nodes) {
     if (n.x < minX) minX = n.x;
     if (n.y < minY) minY = n.y;
-    if (n.x + EXPORT_NODE_W > maxX) maxX = n.x + EXPORT_NODE_W;
-    if (n.y + EXPORT_NODE_H > maxY) maxY = n.y + EXPORT_NODE_H;
+    if (n.x + n.layout.width > maxX) maxX = n.x + n.layout.width;
+    if (n.y + n.layout.height > maxY) maxY = n.y + n.layout.height;
   }
   return { minX, minY, maxX, maxY };
 };
 
-const nodeSvgParts = (n: ExportNode, t: Translator): string => {
-  const p = n.person;
-  const accent = genderAccent(p.gender);
-  const name = fullName(p, t);
-  const life = lifeSpan(p);
-  const maiden = p.maidenName ? `${t("maidenPrefix")} ${p.maidenName}` : "";
-  const notesRaw = (p.notes || "").split(/\r?\n/)[0] || "";
-  const notes = notesRaw.length > 42 ? notesRaw.slice(0, 39) + "…" : notesRaw;
+const nodeSvgParts = (n: ExportNode): string => {
+  const { layout } = n;
+  const w = layout.width;
+  const h = layout.height;
+  const avatarRadius = 12;
 
   const parts: string[] = [];
   parts.push(`<g transform="translate(${n.x},${n.y})">`);
   parts.push(
-    `<rect width="${EXPORT_NODE_W}" height="${EXPORT_NODE_H}" rx="12" ry="12" fill="${CARD_BG}" stroke="${CARD_BORDER}" stroke-width="1"/>`,
+    `<rect width="${w}" height="${h}" rx="12" ry="12" fill="${CARD_BG}" stroke="${CARD_BORDER}" stroke-width="1"/>`,
   );
   parts.push(
-    `<rect width="4" height="${EXPORT_NODE_H}" rx="2" ry="2" fill="${accent}"/>`,
+    `<rect width="4" height="${h}" rx="2" ry="2" fill="${layout.accent}"/>`,
   );
-  parts.push(
-    `<circle cx="24" cy="26" r="11" fill="${accent}" fill-opacity="0.15"/>`,
-  );
-  parts.push(`<circle cx="24" cy="26" r="5" fill="${accent}"/>`);
-  parts.push(
-    `<text x="44" y="24" font-size="13" font-weight="700" fill="${TEXT_PRIMARY}">${escapeXml(name)}</text>`,
-  );
-  let y = 40;
-  if (maiden) {
+
+  if (layout.photo) {
+    const clipId = `avatar-clip-${n.id}`;
     parts.push(
-      `<text x="44" y="${y}" font-size="10" fill="${TEXT_SECONDARY}" font-style="italic">${escapeXml(maiden)}</text>`,
+      `<clipPath id="${clipId}"><rect x="${CARD_PADDING}" y="${CARD_PADDING}" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}" rx="${avatarRadius}" ry="${avatarRadius}"/></clipPath>`,
     );
-    y += 14;
-  }
-  if (life) {
     parts.push(
-      `<text x="44" y="${y}" font-size="10" font-weight="600" fill="${TEXT_SECONDARY}">${escapeXml(life)}</text>`,
+      `<image href="${layout.photo}" x="${CARD_PADDING}" y="${CARD_PADDING}" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>`,
     );
-    y += 14;
-  }
-  if (notes) {
     parts.push(
-      `<text x="12" y="73" font-size="9" fill="${TEXT_MUTED}">${escapeXml(notes)}</text>`,
+      `<rect x="${CARD_PADDING}" y="${CARD_PADDING}" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}" rx="${avatarRadius}" ry="${avatarRadius}" fill="none" stroke="${CARD_BORDER}" stroke-width="2"/>`,
+    );
+  } else {
+    parts.push(
+      `<rect x="${CARD_PADDING}" y="${CARD_PADDING}" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}" rx="${avatarRadius}" ry="${avatarRadius}" fill="${layout.accent}" fill-opacity="0.15" stroke="${layout.accent}" stroke-opacity="0.3" stroke-width="2"/>`,
+    );
+    const iconSize = AVATAR_SIZE * 0.4;
+    const iconOffset = CARD_PADDING + (AVATAR_SIZE - iconSize) / 2;
+    parts.push(
+      `<rect x="${iconOffset}" y="${iconOffset}" width="${iconSize}" height="${iconSize}" rx="${iconSize * 0.3}" ry="${iconSize * 0.3}" fill="${layout.accent}"/>`,
     );
   }
+
+  for (const line of layout.lines) {
+    const weight = line.weight === "bold" ? ` font-weight="700"` : "";
+    const style = line.italic ? ` font-style="italic"` : "";
+    parts.push(
+      `<text x="${line.x}" y="${line.y}" font-size="${line.size}"${weight}${style} fill="${line.color}">${escapeXml(line.text)}</text>`,
+    );
+  }
+
   parts.push(`</g>`);
   return parts.join("");
 };
 
+const segmentsToPath = (segments: Segment[]): string => {
+  let d = "";
+  let prev: { x: number; y: number } | null = null;
+  for (const s of segments) {
+    if (!prev || prev.x !== s.x1 || prev.y !== s.y1) d += `M ${s.x1} ${s.y1} `;
+    d += `L ${s.x2} ${s.y2} `;
+    prev = { x: s.x2, y: s.y2 };
+  }
+  return d.trim();
+};
+
 const edgeSvgParts = (e: RoutedEdge): string => {
-  const first = e.segments[0];
-  if (!first) return "";
+  if (e.segments.length === 0) return "";
   const strokeWidth = e.kind === "spouse" ? 2 : 1.6;
-  let d = `M ${first.x1} ${first.y1}`;
-  for (const s of e.segments) d += ` L ${s.x2} ${s.y2}`;
+  const d = segmentsToPath(e.segments);
   let out = `<path d="${d}" fill="none" stroke="${e.color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`;
-  if (e.arrow) {
+  for (const { x, y } of e.arrows ?? []) {
     const sz = 6;
-    const { x, y } = e.arrow;
     out += `<path d="M ${x - sz} ${y - sz} L ${x} ${y} L ${x + sz} ${y - sz} Z" fill="${e.color}"/>`;
   }
   return out;
@@ -328,7 +608,7 @@ const edgeSvgParts = (e: RoutedEdge): string => {
 export const buildTreeSvg = (
   nodes: ExportNode[],
   logicalEdges: LogicalEdge[],
-  t: Translator,
+  _t: Translator,
   opts?: { title?: string; subtitle?: string },
 ): string => {
   const padding = 40;
@@ -344,7 +624,7 @@ export const buildTreeSvg = (
   const parts: string[] = [];
   parts.push(`<?xml version="1.0" encoding="UTF-8"?>`);
   parts.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${vbX} ${vbY} ${width} ${height}" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${vbX} ${vbY} ${width} ${height}" font-family="${FONT_FAMILY}">`,
   );
   parts.push(
     `<rect x="${vbX}" y="${vbY}" width="${width}" height="${height}" fill="${BG_COLOR}"/>`,
@@ -362,7 +642,7 @@ export const buildTreeSvg = (
   }
 
   for (const e of routed) parts.push(edgeSvgParts(e));
-  for (const n of nodes) parts.push(nodeSvgParts(n, t));
+  for (const n of nodes) parts.push(nodeSvgParts(n));
 
   parts.push("</svg>");
   return parts.join("");
@@ -410,71 +690,68 @@ const applyText = (pdf: jsPDF, hex: string) => {
   pdf.setTextColor(r, g, b);
 };
 
+const pdfImageFormat = (dataUrl: string): "PNG" | "JPEG" => {
+  const mime = dataUrlMimeType(dataUrl);
+  return mime.includes("png") ? "PNG" : "JPEG";
+};
+
 const drawNodePdf = (
   pdf: jsPDF,
   n: ExportNode,
-  t: Translator,
   offsetX: number,
   offsetY: number,
   scale: number,
 ) => {
-  const p = n.person;
+  const { layout } = n;
   const x = (n.x - offsetX) * scale;
   const y = (n.y - offsetY) * scale;
-  const w = EXPORT_NODE_W * scale;
-  const h = EXPORT_NODE_H * scale;
-  const accent = genderAccent(p.gender);
+  const w = layout.width * scale;
+  const h = layout.height * scale;
 
   applyDraw(pdf, CARD_BORDER);
   applyFill(pdf, CARD_BG);
   pdf.setLineWidth(0.4);
   pdf.roundedRect(x, y, w, h, 6 * scale, 6 * scale, "FD");
 
-  applyFill(pdf, accent);
+  applyFill(pdf, layout.accent);
   pdf.roundedRect(x, y, 3 * scale, h, 1.5 * scale, 1.5 * scale, "F");
 
-  pdf.circle(x + 12 * scale, y + 13 * scale, 2.5 * scale, "F");
+  const avatarSize = AVATAR_SIZE * scale;
+  const avatarX = x + CARD_PADDING * scale;
+  const avatarY = y + CARD_PADDING * scale;
+  const avatarRadius = 6 * scale;
 
-  const textX = x + 22 * scale;
-  applyText(pdf, TEXT_PRIMARY);
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(10 * scale);
-  const name = fullName(p, t);
-  pdf.text(truncate(name, 26), textX, y + 12 * scale);
-
-  let yCursor = y + 20 * scale;
-  if (p.maidenName) {
-    pdf.setFont("helvetica", "italic");
-    pdf.setFontSize(7 * scale);
-    applyText(pdf, TEXT_SECONDARY);
-    pdf.text(
-      truncate(`${t("maidenPrefix")} ${p.maidenName}`, 32),
-      textX,
-      yCursor,
-    );
-    yCursor += 7 * scale;
-  }
-  const life = lifeSpan(p);
-  if (life) {
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(7 * scale);
-    applyText(pdf, TEXT_SECONDARY);
-    pdf.text(life, textX, yCursor);
-    yCursor += 7 * scale;
-  }
-  if (p.notes) {
-    const note = (p.notes.split(/\r?\n/)[0] || "").trim();
-    if (note) {
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(6.5 * scale);
-      applyText(pdf, TEXT_MUTED);
-      pdf.text(truncate(note, 40), x + 6 * scale, y + h - 4 * scale);
+  if (layout.photo) {
+    try {
+      pdf.saveGraphicsState();
+      const clipPath = pdf as unknown as {
+        roundedRect: (x: number, y: number, w: number, h: number, rx: number, ry: number, style?: string) => void;
+        clip: () => void;
+        discardPath: () => void;
+      };
+      clipPath.roundedRect(avatarX, avatarY, avatarSize, avatarSize, avatarRadius, avatarRadius);
+      clipPath.clip();
+      clipPath.discardPath();
+      pdf.addImage(layout.photo, pdfImageFormat(layout.photo), avatarX, avatarY, avatarSize, avatarSize);
+      pdf.restoreGraphicsState();
+      applyDraw(pdf, CARD_BORDER);
+      pdf.setLineWidth(0.6 * scale);
+      pdf.roundedRect(avatarX, avatarY, avatarSize, avatarSize, avatarRadius, avatarRadius, "D");
+    } catch {
+      // Fall through silently: a corrupt/unsupported image should not abort the export.
     }
+  } else {
+    applyFill(pdf, layout.accent);
+    pdf.roundedRect(avatarX, avatarY, avatarSize, avatarSize, avatarRadius, avatarRadius, "F");
+  }
+
+  for (const line of layout.lines) {
+    pdf.setFont("helvetica", line.italic ? "italic" : line.weight === "bold" ? "bold" : "normal");
+    pdf.setFontSize(line.size * scale);
+    applyText(pdf, line.color);
+    pdf.text(line.text, x + line.x * scale, y + line.y * scale);
   }
 };
-
-const truncate = (s: string, n: number): string =>
-  s.length > n ? s.slice(0, n - 1) + "…" : s;
 
 const drawEdgePdf = (
   pdf: jsPDF,
@@ -493,10 +770,10 @@ const drawEdgePdf = (
       (s.y2 - offsetY) * scale,
     );
   }
-  if (e.arrow) {
+  for (const arrow of e.arrows ?? []) {
     const size = 4 * scale;
-    const ax = (e.arrow.x - offsetX) * scale;
-    const ay = (e.arrow.y - offsetY) * scale;
+    const ax = (arrow.x - offsetX) * scale;
+    const ay = (arrow.y - offsetY) * scale;
     pdf.setFillColor(...hexToRgb(e.color));
     pdf.triangle(ax - size, ay - size, ax + size, ay - size, ax, ay, "F");
   }
@@ -505,8 +782,8 @@ const drawEdgePdf = (
 const pageRectForNode = (n: ExportNode): PageRect => ({
   x: n.x,
   y: n.y,
-  w: EXPORT_NODE_W,
-  h: EXPORT_NODE_H,
+  w: n.layout.width,
+  h: n.layout.height,
 });
 
 const pageRectForEdge = (e: RoutedEdge): PageRect => {
@@ -602,8 +879,6 @@ const drawPdfTitle = (
   metrics: PageLayoutMetrics,
   page: number,
   totalPages: number,
-  row: number,
-  col: number,
 ) => {
   if (!opts.includeTitle) return;
   const { pageW } = metrics;
@@ -620,14 +895,30 @@ const drawPdfTitle = (
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(8);
   applyText(pdf, TEXT_MUTED);
-  const multi = opts.layout === "multi" && totalPages > 1;
-  const coord = multi ? `  •  (${col + 1}, ${row + 1})` : "";
-  pdf.text(
-    `${page} / ${totalPages}${coord}`,
-    pageW - opts.margin,
-    opts.margin + 14,
-    { align: "right" },
-  );
+  pdf.text(`${page} / ${totalPages}`, pageW - opts.margin, opts.margin + 14, {
+    align: "right",
+  });
+};
+
+const drawTileIndicator = (pdf: jsPDF, metrics: PageLayoutMetrics, row: number, col: number) => {
+  const { pageW } = metrics;
+  const inset = 8;
+  const label = `(${col + 1}, ${row + 1})`;
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  const padX = 4;
+  const padY = 3;
+  const textW = pdf.getTextWidth(label);
+  const boxW = textW + padX * 2;
+  const boxH = 8 + padY * 2;
+  const x = pageW - inset - boxW;
+  const y = inset;
+  pdf.setFillColor(255, 255, 255);
+  pdf.setDrawColor(203, 213, 225);
+  pdf.setLineWidth(0.5);
+  pdf.roundedRect(x, y, boxW, boxH, 2, 2, "FD");
+  applyText(pdf, TEXT_SECONDARY);
+  pdf.text(label, x + padX, y + boxH - padY - 1);
 };
 
 const drawCropMarks = (
@@ -635,7 +926,7 @@ const drawCropMarks = (
   opts: ExportOptions,
   metrics: PageLayoutMetrics,
 ) => {
-  if (opts.layout !== "multi") return;
+  if (opts.layout !== "multi" || opts.margin <= 0) return;
   const { pageW, pageH, titleReserve } = metrics;
   const m = opts.margin;
   pdf.setDrawColor(150, 150, 150);
@@ -670,14 +961,16 @@ const drawTile = (
   const { pageW, pageH, titleReserve, scale, tileW, tileH } = metrics;
   const m = opts.margin;
 
-  applyFill(pdf, BG_COLOR);
-  pdf.rect(
-    m,
-    m + titleReserve,
-    pageW - m * 2,
-    pageH - m * 2 - titleReserve,
-    "F",
-  );
+  if (!opts.transparentBackground) {
+    applyFill(pdf, BG_COLOR);
+    pdf.rect(
+      m,
+      m + titleReserve,
+      pageW - m * 2,
+      pageH - m * 2 - titleReserve,
+      "F",
+    );
+  }
 
   const offsetX = bounds.minX + col * tileW;
   const offsetY = bounds.minY + row * tileH;
@@ -698,11 +991,14 @@ const drawTile = (
   }
   for (const { n, r } of nodeRects) {
     if (!intersects(r, viewportRect)) continue;
-    drawNodePdf(pdf, n, opts.t, translateOriginX, translateOriginY, scale);
+    drawNodePdf(pdf, n, translateOriginX, translateOriginY, scale);
   }
 
   pdf.restoreGraphicsState();
 };
+
+const truncate = (s: string, n: number): string =>
+  s.length > n ? s.slice(0, n - 1) + "…" : s;
 
 const drawIndex = (
   pdf: jsPDF,
@@ -780,19 +1076,32 @@ export const buildTreePdf = (
   const nodeRects = nodes.map((n) => ({ n, r: pageRectForNode(n) }));
   const edgeRects = routed.map((e) => ({ e, r: pageRectForEdge(e) }));
 
-  const totalTilePages = metrics.cols * metrics.rows;
-  const estIndexPages = opts.includeIndex ? 1 : 0;
-  const totalPages = totalTilePages + estIndexPages;
-
-  let pageCount = 0;
+  const tilesToRender: { row: number; col: number }[] = [];
   for (let row = 0; row < metrics.rows; row++) {
     for (let col = 0; col < metrics.cols; col++) {
-      if (pageCount > 0)
-        pdf.addPage([metrics.pageW, metrics.pageH], metrics.orientation);
-      pageCount++;
-      drawTile(pdf, opts, metrics, { bounds, nodeRects, edgeRects }, row, col);
-      drawPdfTitle(pdf, opts, metrics, pageCount, totalPages, row, col);
-      drawCropMarks(pdf, opts, metrics);
+      const viewportRect: PageRect = {
+        x: bounds.minX + col * metrics.tileW,
+        y: bounds.minY + row * metrics.tileH,
+        w: metrics.tileW,
+        h: metrics.tileH,
+      };
+      if (nodeRects.some(({ r }) => intersects(r, viewportRect))) tilesToRender.push({ row, col });
+    }
+  }
+  if (tilesToRender.length === 0) tilesToRender.push({ row: 0, col: 0 });
+
+  const estIndexPages = opts.includeIndex ? 1 : 0;
+  const totalPages = tilesToRender.length + estIndexPages;
+
+  let pageCount = 0;
+  for (const { row, col } of tilesToRender) {
+    if (pageCount > 0) pdf.addPage([metrics.pageW, metrics.pageH], metrics.orientation);
+    pageCount++;
+    drawTile(pdf, opts, metrics, { bounds, nodeRects, edgeRects }, row, col);
+    drawPdfTitle(pdf, opts, metrics, pageCount, totalPages);
+    drawCropMarks(pdf, opts, metrics);
+    if (opts.includeTileIndicator !== false && opts.layout === "multi" && tilesToRender.length > 1) {
+      drawTileIndicator(pdf, metrics, row, col);
     }
   }
 
@@ -802,11 +1111,3 @@ export const buildTreePdf = (
 
   return pdf;
 };
-
-export const toPersonNodes = (people: Person[]): ExportNode[] =>
-  people.map((p) => ({
-    id: p.id,
-    x: p.position?.x ?? 0,
-    y: p.position?.y ?? 0,
-    person: p,
-  }));

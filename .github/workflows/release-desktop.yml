@@ -1,0 +1,207 @@
+name: "release desktop app"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. arbor-v1.2.3). Leave empty to auto-compute the next version from Conventional Commits since the last arbor-v* tag."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # Conventional Commits (feat:/fix:/BREAKING CHANGE:) drive the version
+  # bump, the same scheme used in github.com/Nytuo/oden's release workflow.
+  # No commits worth releasing since the last tag -> the run is a no-op.
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      build_needed: ${{ steps.version.outputs.build_needed }}
+      changelog: ${{ steps.version.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: version
+        run: |
+          set -euo pipefail
+          input_tag="${{ github.event.inputs.tag }}"
+
+          is_tag_push=false
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            is_tag_push=true
+          fi
+
+          last_tag="$(git tag --list 'arbor-v*' --sort=-v:refname | head -n1)"
+
+          if [ -n "$input_tag" ]; then
+            tag="$input_tag"
+          elif [ "$is_tag_push" = "true" ]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            if [ -z "$last_tag" ]; then
+              last_version="0.1.0"
+              range=""
+            else
+              last_version="${last_tag#arbor-v}"
+              range="${last_tag}..HEAD"
+            fi
+
+            log="$(git log ${range} --pretty=format:'%s%n%b' || true)"
+
+            bump="none"
+            if echo "$log" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:|^BREAKING CHANGE:'; then
+              bump="major"
+            elif echo "$log" | grep -qE '^feat(\([^)]*\))?:'; then
+              bump="minor"
+            elif echo "$log" | grep -qE '^fix(\([^)]*\))?:'; then
+              bump="patch"
+            fi
+
+            if [ "$bump" = "none" ]; then
+              echo "::notice::no releasable commits since ${last_tag:-the beginning of history}, skipping release"
+              echo "build_needed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            IFS='.' read -r major minor patch <<< "$last_version"
+            case "$bump" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+            esac
+            tag="arbor-v${major}.${minor}.${patch}"
+          fi
+
+          if [[ ! "$tag" =~ ^arbor-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag '$tag' does not match required format arbor-vX.Y.Z"
+            exit 1
+          fi
+
+          {
+            echo "changelog<<CHANGELOG_EOF_${GITHUB_RUN_ID}"
+            git log ${range:-} --pretty=format:'- %s' || true
+            echo "CHANGELOG_EOF_${GITHUB_RUN_ID}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "build_needed=true" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#arbor-v}" >> "$GITHUB_OUTPUT"
+
+  # Bumps src-tauri/tauri.conf.json + Cargo.toml to the resolved version,
+  # commits, and tags - unless the workflow was triggered by a tag push
+  # (the tag, and presumably the version bump, already exist in that case).
+  ensure-tag:
+    name: Ensure release tag exists
+    needs: version
+    if: needs.version.outputs.build_needed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version, commit, tag and push
+        if: github.ref_type != 'tag'
+        run: |
+          set -euo pipefail
+          tag="${{ needs.version.outputs.tag }}"
+          version="${{ needs.version.outputs.version }}"
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "tag $tag already exists, leaving it and its config as-is"
+            exit 0
+          fi
+
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${version}\"/" src-tauri/tauri.conf.json
+          sed -i "0,/^version = \"[^\"]*\"/s//version = \"${version}\"/" src-tauri/Cargo.toml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git commit -m "chore(release): arbor v${version}"
+          git push origin "HEAD:${GITHUB_REF}"
+
+          git tag "$tag" HEAD
+          git push origin "$tag"
+
+      - name: Create tag if missing (tag-push trigger)
+        if: github.ref_type == 'tag'
+        run: |
+          tag="${{ needs.version.outputs.tag }}"
+          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            git tag "$tag" "${{ github.sha }}"
+            git push origin "$tag"
+          fi
+
+  publish-tauri:
+    needs: [version, ensure-tag]
+    if: needs.version.outputs.build_needed == 'true'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-latest"
+            args: "--target aarch64-apple-darwin"
+          - platform: "macos-latest"
+            args: "--target x86_64-apple-darwin"
+          - platform: "ubuntu-24.04"
+            args: ""
+          - platform: "windows-latest"
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: "npm"
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: "Arbor ${{ needs.version.outputs.tag }}"
+          releaseBody: ${{ needs.version.outputs.changelog }}
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
