@@ -25,7 +25,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCRDNDQkU3NTE4QjI5NTcKUldSWEtZdFI1OHZURzlLZnhCalVNUGZRYU5wOCtFRkRTSDVjdlFxZUp4dXRrM1FRTnlneVpyYUUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzQUFENjU4N0U0OTFBQjkKUldTNUdrbCtXTmFxMDIva05EOFIwaTcvL1ZJWURHRSt1a2F5eW9TblYrU1lhRk9iWTN6aThLanEK",
       "endpoints": [
         "https://github.com/Nytuo/arbor/releases/latest/download/latest.json"
       ]
