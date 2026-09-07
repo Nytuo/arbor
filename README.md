@@ -116,10 +116,7 @@ Arbor is a local-first, client-only app (data lives in the browser via `localfor
   npm run tauri:build  # build a release binary for the current OS
   ```
 
-  The desktop build checks GitHub Releases for updates shortly after launch and shows a modal with the changelog; nothing downloads or installs until the user clicks "Update Now".
-
-  Releases are published automatically by `.github/workflows/release-desktop.yml` on every push to `main`, versioned from [Conventional Commits](https://www.conventionalcommits.org/) since the last `arbor-v*` tag (`fix:` → patch, `feat:` → minor, `!:`/`BREAKING CHANGE:` → major; no matching commits → no release). It bumps `src-tauri/tauri.conf.json`/`Cargo.toml`, tags, builds for macOS/Windows/Linux, and opens a **draft** GitHub release — review and publish it manually. A specific version can also be forced via "Run workflow" in the Actions tab. It needs two repo secrets:
-  - `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — generate with `npx tauri signer generate -w /path/outside/repo/arbor.key`; the private key must **never** be committed. The matching public key is already in `src-tauri/tauri.conf.json`.
+  The desktop build checks GitHub Releases for updates shortly after launch and shows a modal with the changelog;
 
 ## Contributing
 
